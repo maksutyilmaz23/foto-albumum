@@ -62,6 +62,10 @@
     font-size:15px;margin-top:10px;font-family:inherit;}
   #titleModal .row{display:flex;gap:8px;margin-top:16px;}
   #titleModal .row .btn{flex:1;justify-content:center;}
+  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#2b2420;color:#fffdf9;padding:11px 20px;border-radius:10px;font-size:13px;
+    font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;z-index:60;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body>
@@ -73,9 +77,17 @@
 
 <div class="toolbar">
   <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">＋ Fotoğraf Ekle</button>
+  <button class="btn btn-ghost" onclick="saveNow()">💾 Kaydet</button>
   <button class="btn btn-ghost" onclick="openTitleModal()">📕 PDF Oluştur</button>
 </div>
+<div class="toolbar">
+  <button class="btn btn-ghost" onclick="exportBackup()">⬇️ JSON Yedek Al</button>
+  <button class="btn btn-ghost" onclick="document.getElementById('jsonInput').click()">⬆️ Yedekten Yükle</button>
+</div>
 <input type="file" id="fileInput" accept="image/*" multiple>
+<input type="file" id="jsonInput" accept="application/json,.json">
+
+<div id="toast"></div>
 
 <div id="empty">
   <div class="big">🖼️</div>
@@ -161,6 +173,71 @@ function removePhoto(id){
   photos = photos.filter(x => x.id !== id);
   save(); render();
 }
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._h);
+  showToast._h = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function saveNow(){
+  save();
+  showToast('Kaydedildi ✓');
+}
+
+function downloadOrBridgeText(text, fileName){
+  if (window.AndroidFileSaver) {
+    window.AndroidFileSaver.saveText(text, fileName);
+  } else {
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function exportBackup(){
+  if(photos.length === 0){ alert('Yedeklenecek fotoğraf yok.'); return; }
+  const backup = {
+    app: 'FotoAlbumum',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    photos: photos
+  };
+  const fileName = `foto-albumu-yedek-${new Date().toISOString().slice(0,10)}.json`;
+  downloadOrBridgeText(JSON.stringify(backup), fileName);
+  showToast('JSON yedek indirildi');
+}
+
+document.getElementById('jsonInput').addEventListener('change', function(e){
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    let data;
+    try{ data = JSON.parse(ev.target.result); }
+    catch(err){ alert('Geçersiz yedek dosyası.'); return; }
+    const incoming = Array.isArray(data) ? data : data.photos;
+    if(!Array.isArray(incoming)){ alert('Bu dosya bir Foto Albümüm yedeği değil.'); return; }
+    const replace = photos.length === 0 || confirm(
+      'Mevcut albümdeki fotoğrafların üzerine mi yazılsın?\n' +
+      'Tamam: üzerine yaz   İptal: sona ekle'
+    );
+    if(replace){
+      photos = incoming;
+    } else {
+      photos = photos.concat(incoming.map(p => ({ ...p, id: uid() })));
+    }
+    save(); render();
+    showToast('Yedek yüklendi ✓');
+  };
+  reader.readAsText(file);
+});
 
 document.getElementById('fileInput').addEventListener('change', function(e){
   const files = Array.from(e.target.files || []);
@@ -267,11 +344,11 @@ async function exportPdf(){
 
   const fileName = `${title.replace(/[^\p{L}\p{N}\- ]/gu,'').trim() || 'foto-albumu'}.pdf`;
 
-  if (window.AndroidPdfSaver) {
+  if (window.AndroidFileSaver) {
     // Running inside the Android WebView wrapper: hand the PDF to native code
     // so it lands in the Downloads folder (in-browser downloads don't work in WebView).
     const base64 = pdf.output('datauristring').split(',')[1];
-    window.AndroidPdfSaver.savePdf(base64, fileName);
+    window.AndroidFileSaver.saveBase64(base64, fileName);
   } else {
     pdf.save(fileName);
   }

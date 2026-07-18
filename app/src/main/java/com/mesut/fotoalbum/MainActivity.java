@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
         settings.setAllowFileAccess(true);
         settings.setDatabaseEnabled(true);
 
-        webView.addJavascriptInterface(new PdfSaverBridge(), "AndroidPdfSaver");
+        webView.addJavascriptInterface(new FileSaverBridge(), "AndroidFileSaver");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -97,22 +97,31 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Lets the web page hand a base64 PDF over to native code to save into Downloads. */
-    private class PdfSaverBridge {
+    /** Lets the web page hand PDF (base64) or JSON (plain text) content to native code
+     *  to save into the Downloads folder — WebView doesn't support browser-style downloads. */
+    private class FileSaverBridge {
         @JavascriptInterface
-        public void savePdf(final String base64Data, final String fileName) {
+        public void saveBase64(final String base64Data, final String fileName) {
+            writeToDownloads(Base64.decode(base64Data, Base64.DEFAULT), fileName);
+        }
+
+        @JavascriptInterface
+        public void saveText(final String text, final String fileName) {
+            writeToDownloads(text.getBytes(java.nio.charset.StandardCharsets.UTF_8), fileName);
+        }
+
+        private void writeToDownloads(final byte[] bytes, final String fileName) {
             runOnUiThread(() -> {
                 try {
-                    byte[] bytes = Base64.decode(base64Data, Base64.DEFAULT);
                     File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
                     if (!dir.exists()) dir.mkdirs();
                     File outFile = new File(dir, fileName);
                     FileOutputStream fos = new FileOutputStream(outFile);
                     fos.write(bytes);
                     fos.close();
-                    Toast.makeText(MainActivity.this, "PDF kaydedildi: İndirilenler/" + fileName, Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "Kaydedildi: İndirilenler/" + fileName, Toast.LENGTH_LONG).show();
                 } catch (Exception e) {
-                    Toast.makeText(MainActivity.this, "PDF kaydedilemedi: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(MainActivity.this, "Kaydedilemedi: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 }
             });
         }
