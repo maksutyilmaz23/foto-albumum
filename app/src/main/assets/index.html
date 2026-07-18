@@ -38,7 +38,7 @@
     box-shadow:0 1px 3px rgba(43,36,32,.06);}
   .card .num{font-size:11px;color:#a8562e;font-weight:700;letter-spacing:.5px;
     padding:10px 14px 0;text-transform:uppercase;}
-  .card .imgFrame{width:100%;aspect-ratio:4/3;overflow:hidden;background:#eee3cf;}
+  .card .imgFrame{width:100%;overflow:hidden;background:#eee3cf;}
   .card .imgFrame img{width:100%;height:100%;display:block;object-fit:cover;}
   .card textarea{width:100%;border:none;resize:vertical;min-height:56px;padding:12px 14px;
     font-size:14px;font-family:inherit;color:var(--ink);background:transparent;outline:none;}
@@ -60,6 +60,10 @@
     -webkit-user-drag:none;pointer-events:none;}
   #cropModal input[type=range]{width:100%;margin-top:14px;}
   #cropModal .zoomLabel{font-size:12px;color:#7a6f60;display:flex;justify-content:space-between;}
+  #cropModal .orientRow{display:flex;gap:8px;margin:12px 0;}
+  #cropModal .orientRow button{flex:1;border:1px solid var(--line);background:#f6f1e7;
+    border-radius:8px;padding:9px 0;font-size:13px;font-weight:600;color:#7a6f60;}
+  #cropModal .orientRow button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
   #cropModal .row{display:flex;gap:8px;margin-top:16px;}
   #cropModal .row .btn{flex:1;justify-content:center;}
   footer.bar{position:fixed;bottom:0;left:0;right:0;background:var(--paper);
@@ -115,6 +119,11 @@
   <div class="box">
     <strong>Albüm Başlığı</strong>
     <input id="albumTitleInput" type="text" placeholder="Örn. Yaz Tatili 2026" maxlength="80">
+    <div class="orientRow" style="margin-top:14px;">
+      <button id="layout1Btn" onclick="setPdfLayout(1)">1 / sayfa</button>
+      <button id="layout2Btn" onclick="setPdfLayout(2)">2 / sayfa</button>
+      <button id="layout4Btn" onclick="setPdfLayout(4)">4 / sayfa</button>
+    </div>
     <div class="row">
       <button class="btn btn-ghost" onclick="closeTitleModal()">Vazgeç</button>
       <button class="btn btn-primary" onclick="exportPdf()">Oluştur</button>
@@ -128,6 +137,10 @@
   <div class="box">
     <h3>Fotoğrafı Kırp</h3>
     <p class="hint">Konumlamak için sürükle, yakınlaştırmak için kaydırıcıyı kullan.</p>
+    <div class="orientRow">
+      <button id="orientLandscapeBtn" onclick="setCropOrientation('landscape')">▭ Yatay</button>
+      <button id="orientPortraitBtn" onclick="setCropOrientation('portrait')">▯ Dikey</button>
+    </div>
     <div id="cropFrame">
       <img id="cropImg" src="" alt="">
     </div>
@@ -169,7 +182,7 @@ function render(){
   grid.innerHTML = photos.map((p, i) => `
     <div class="card" data-id="${p.id}">
       <div class="num">Sayfa ${i+1} / ${photos.length}</div>
-      <div class="imgFrame"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}"></div>
+      <div class="imgFrame" style="aspect-ratio:${p.orientation === 'portrait' ? '3/4' : '4/3'};"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}"></div>
       <textarea placeholder="Bu fotoğraf için not yaz…" oninput="updateNote('${p.id}', this.value)">${escapeHtml(p.note||'')}</textarea>
       <div class="card-actions">
         <button onclick="openCropEditor('${p.id}')">✂️ Kırp</button>
@@ -303,15 +316,20 @@ document.getElementById('fileInput').addEventListener('change', function(e){
 });
 
 // ---- Fotoğraf kırpma editörü ----
-let cropState = null; // {photoId, natW, natH, frameW, frameH, baseScale, z, tx, ty, dragging, lastX, lastY}
+let cropState = null; // {photoId, natW, natH, FW, FH, baseScale, z, tx, ty, orientation}
 
-function openCropEditor(id){
+function updateOrientButtons(){
+  const isPortrait = cropState.orientation === 'portrait';
+  document.getElementById('orientLandscapeBtn').classList.toggle('active', !isPortrait);
+  document.getElementById('orientPortraitBtn').classList.toggle('active', isPortrait);
+}
+
+function initCropForOrientation(id, orientation){
   const p = photos.find(x => x.id === id);
   if(!p) return;
-  const modal = document.getElementById('cropModal');
-  const imgEl = document.getElementById('cropImg');
   const frame = document.getElementById('cropFrame');
-  modal.style.display = 'flex';
+  const imgEl = document.getElementById('cropImg');
+  frame.style.aspectRatio = orientation === 'portrait' ? '3/4' : '4/3';
 
   const natImg = new Image();
   natImg.onload = function(){
@@ -319,18 +337,38 @@ function openCropEditor(id){
     const FW = frameRect.width, FH = frameRect.height;
     const natW = natImg.naturalWidth, natH = natImg.naturalHeight;
     const baseScale = Math.max(FW / natW, FH / natH);
-    const crop = p.crop || { zoom: 1, fx: 0.5, fy: 0.5 };
+    const sameOrientation = p.orientation === orientation && p.crop;
+    const crop = sameOrientation ? p.crop : { zoom: 1, fx: 0.5, fy: 0.5 };
     const z = crop.zoom || 1;
     const imgW = natW * baseScale * z, imgH = natH * baseScale * z;
     const tx = imgW > FW ? -(crop.fx * (imgW - FW)) : (FW - imgW) / 2;
     const ty = imgH > FH ? -(crop.fy * (imgH - FH)) : (FH - imgH) / 2;
 
-    cropState = { photoId: id, natW, natH, FW, FH, baseScale, z, tx, ty };
+    cropState = { photoId: id, natW, natH, FW, FH, baseScale, z, tx, ty, orientation };
     imgEl.src = p.dataUrl;
     imgEl.style.width = imgW + 'px';
     imgEl.style.height = imgH + 'px';
     imgEl.style.transform = `translate(${tx}px, ${ty}px)`;
     document.getElementById('cropZoom').value = Math.round(z * 100);
+    updateOrientButtons();
+  };
+  natImg.src = p.dataUrl;
+}
+
+function setCropOrientation(orientation){
+  if(!cropState) return;
+  initCropForOrientation(cropState.photoId, orientation);
+}
+
+function openCropEditor(id){
+  const p = photos.find(x => x.id === id);
+  if(!p) return;
+  document.getElementById('cropModal').style.display = 'flex';
+
+  const natImg = new Image();
+  natImg.onload = function(){
+    const defaultOrientation = p.orientation || (natImg.naturalWidth >= natImg.naturalHeight ? 'landscape' : 'portrait');
+    initCropForOrientation(id, defaultOrientation);
   };
   natImg.src = p.dataUrl;
 }
@@ -397,6 +435,7 @@ function saveCrop(){
   const fx = imgW > s.FW ? (-s.tx) / (imgW - s.FW) : 0.5;
   const fy = imgH > s.FH ? (-s.ty) / (imgH - s.FH) : 0.5;
   p.crop = { zoom: s.z, fx: Math.min(1, Math.max(0, fx)), fy: Math.min(1, Math.max(0, fy)) };
+  p.orientation = s.orientation;
 
   // rasterize the visible region in natural-pixel space
   const scaleNatToCss = s.baseScale * s.z;
@@ -407,7 +446,8 @@ function saveCrop(){
 
   const srcImg = new Image();
   srcImg.onload = function(){
-    const outW = 1000, outH = 750;
+    const outW = s.orientation === 'portrait' ? 750 : 1000;
+    const outH = s.orientation === 'portrait' ? 1000 : 750;
     const canvas = document.createElement('canvas');
     canvas.width = outW; canvas.height = outH;
     canvas.getContext('2d').drawImage(srcImg, sx, sy, sWidth, sHeight, 0, 0, outW, outH);
@@ -419,8 +459,17 @@ function saveCrop(){
   srcImg.src = p.dataUrl;
 }
 
+let pdfLayout = 1;
+function setPdfLayout(n){
+  pdfLayout = n;
+  document.getElementById('layout1Btn').classList.toggle('active', n === 1);
+  document.getElementById('layout2Btn').classList.toggle('active', n === 2);
+  document.getElementById('layout4Btn').classList.toggle('active', n === 4);
+}
+
 function openTitleModal(){
   if(photos.length === 0){ alert('Önce en az bir fotoğraf ekle.'); return; }
+  setPdfLayout(1);
   document.getElementById('titleModal').style.display = 'flex';
 }
 function closeTitleModal(){
@@ -468,23 +517,50 @@ async function exportPdf(){
     </div>`;
   await renderPageToPdf(coverHtml, true);
 
-  for(let i = 0; i < photos.length; i++){
-    progress.textContent = `Sayfa ${i+1} / ${photos.length}`;
-    const p = photos[i];
+  function photoCellHtml(p, index, cellHeight, noteFontSize, notePadding){
     const photoSrc = p.cropDataUrl || p.dataUrl;
     const noteHtml = p.note
-      ? `<div style="margin-top:22px;font-size:16px;line-height:1.6;color:#2b2420;white-space:pre-wrap;
-           font-family:Georgia,serif;padding:0 40px;text-align:left;">${escapeHtml(p.note)}</div>`
+      ? `<div style="margin-top:10px;font-size:${noteFontSize}px;line-height:1.5;color:#2b2420;
+           white-space:pre-wrap;font-family:Georgia,serif;padding:0 ${notePadding}px;
+           text-align:left;overflow:hidden;">${escapeHtml(p.note)}</div>`
       : '';
-    const pageHtml = `
-      <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
-        background:#fffdf9;padding:50px 40px;">
-        <div style="width:100%;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-          <img src="${photoSrc}" style="max-width:100%;max-height:760px;object-fit:contain;
-            border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.12);">
+    return `
+      <div style="display:flex;flex-direction:column;align-items:center;height:100%;overflow:hidden;">
+        <div style="width:100%;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;">
+          <img src="${photoSrc}" style="max-width:100%;max-height:${cellHeight}px;object-fit:contain;
+            border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.12);">
         </div>
         ${noteHtml}
-        <div style="margin-top:16px;font-size:11px;color:#b0a48f;">${i+1} / ${photos.length}</div>
+      </div>`;
+  }
+
+  const perPage = pdfLayout;
+  const pageCount = Math.ceil(photos.length / perPage);
+
+  for(let pg = 0; pg < pageCount; pg++){
+    const group = photos.slice(pg * perPage, pg * perPage + perPage);
+    progress.textContent = `Sayfa ${pg+1} / ${pageCount}`;
+
+    let bodyHtml;
+    if(perPage === 1){
+      bodyHtml = `<div style="flex:1;min-height:0;">${photoCellHtml(group[0], 0, 760, 16, 40)}</div>`;
+    } else if(perPage === 2){
+      bodyHtml = `
+        <div style="flex:1;min-height:0;display:grid;grid-template-rows:1fr 1fr;gap:24px;width:100%;">
+          ${group.map(p => photoCellHtml(p, 0, 400, 13, 20)).join('')}
+        </div>`;
+    } else {
+      bodyHtml = `
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px;width:100%;">
+          ${group.map(p => photoCellHtml(p, 0, 230, 11, 8)).join('')}
+        </div>`;
+    }
+
+    const pageHtml = `
+      <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
+        background:#fffdf9;padding:44px 40px;">
+        ${bodyHtml}
+        <div style="margin-top:14px;font-size:11px;color:#b0a48f;">${pg+1} / ${pageCount}</div>
       </div>`;
     await renderPageToPdf(pageHtml, false);
   }
