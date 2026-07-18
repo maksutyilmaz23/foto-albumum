@@ -38,7 +38,8 @@
     box-shadow:0 1px 3px rgba(43,36,32,.06);}
   .card .num{font-size:11px;color:#a8562e;font-weight:700;letter-spacing:.5px;
     padding:10px 14px 0;text-transform:uppercase;}
-  .card img{width:100%;display:block;max-height:420px;object-fit:cover;background:#eee3cf;}
+  .card .imgFrame{width:100%;aspect-ratio:4/3;overflow:hidden;background:#eee3cf;}
+  .card .imgFrame img{width:100%;height:100%;display:block;object-fit:cover;}
   .card textarea{width:100%;border:none;resize:vertical;min-height:56px;padding:12px 14px;
     font-size:14px;font-family:inherit;color:var(--ink);background:transparent;outline:none;}
   .card textarea::placeholder{color:#b0a48f;}
@@ -47,6 +48,20 @@
     color:#7a6f60;font-weight:600;}
   .card-actions button:active{background:#f0e8d8;}
   .card-actions button.danger{color:#b23a2e;}
+  #cropModal{position:fixed;inset:0;background:rgba(43,36,32,.85);display:none;
+    align-items:center;justify-content:center;z-index:55;padding:16px;}
+  #cropModal .box{background:var(--card);border-radius:14px;width:100%;max-width:420px;
+    padding:16px;}
+  #cropModal h3{margin:0 0 4px;font-size:15px;}
+  #cropModal p.hint{margin:0 0 12px;font-size:12px;color:#7a6f60;}
+  #cropFrame{position:relative;width:100%;aspect-ratio:4/3;overflow:hidden;border-radius:10px;
+    background:#111;touch-action:none;}
+  #cropFrame img{position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;
+    -webkit-user-drag:none;pointer-events:none;}
+  #cropModal input[type=range]{width:100%;margin-top:14px;}
+  #cropModal .zoomLabel{font-size:12px;color:#7a6f60;display:flex;justify-content:space-between;}
+  #cropModal .row{display:flex;gap:8px;margin-top:16px;}
+  #cropModal .row .btn{flex:1;justify-content:center;}
   footer.bar{position:fixed;bottom:0;left:0;right:0;background:var(--paper);
     border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));
     display:flex;gap:10px;}
@@ -109,6 +124,22 @@
 
 <div id="pdfOverlay"><div class="box">PDF hazırlanıyor…<br><small id="pdfProgress"></small></div></div>
 
+<div id="cropModal">
+  <div class="box">
+    <h3>Fotoğrafı Kırp</h3>
+    <p class="hint">Konumlamak için sürükle, yakınlaştırmak için kaydırıcıyı kullan.</p>
+    <div id="cropFrame">
+      <img id="cropImg" src="" alt="">
+    </div>
+    <div class="zoomLabel"><span>Uzak</span><span>Yakın</span></div>
+    <input type="range" id="cropZoom" min="100" max="300" value="100">
+    <div class="row">
+      <button class="btn btn-ghost" onclick="closeCropEditor()">Vazgeç</button>
+      <button class="btn btn-primary" onclick="saveCrop()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const STORAGE_KEY = 'fotoalbum_v1';
 let photos = []; // {id, dataUrl, note}
@@ -138,9 +169,10 @@ function render(){
   grid.innerHTML = photos.map((p, i) => `
     <div class="card" data-id="${p.id}">
       <div class="num">Sayfa ${i+1} / ${photos.length}</div>
-      <img src="${p.dataUrl}" alt="fotoğraf ${i+1}">
+      <div class="imgFrame"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}"></div>
       <textarea placeholder="Bu fotoğraf için not yaz…" oninput="updateNote('${p.id}', this.value)">${escapeHtml(p.note||'')}</textarea>
       <div class="card-actions">
+        <button onclick="openCropEditor('${p.id}')">✂️ Kırp</button>
         <button onclick="moveUp('${p.id}')">↑ Yukarı</button>
         <button onclick="moveDown('${p.id}')">↓ Aşağı</button>
         <button class="danger" onclick="removePhoto('${p.id}')">🗑 Sil</button>
@@ -270,6 +302,123 @@ document.getElementById('fileInput').addEventListener('change', function(e){
   e.target.value = '';
 });
 
+// ---- Fotoğraf kırpma editörü ----
+let cropState = null; // {photoId, natW, natH, frameW, frameH, baseScale, z, tx, ty, dragging, lastX, lastY}
+
+function openCropEditor(id){
+  const p = photos.find(x => x.id === id);
+  if(!p) return;
+  const modal = document.getElementById('cropModal');
+  const imgEl = document.getElementById('cropImg');
+  const frame = document.getElementById('cropFrame');
+  modal.style.display = 'flex';
+
+  const natImg = new Image();
+  natImg.onload = function(){
+    const frameRect = frame.getBoundingClientRect();
+    const FW = frameRect.width, FH = frameRect.height;
+    const natW = natImg.naturalWidth, natH = natImg.naturalHeight;
+    const baseScale = Math.max(FW / natW, FH / natH);
+    const crop = p.crop || { zoom: 1, fx: 0.5, fy: 0.5 };
+    const z = crop.zoom || 1;
+    const imgW = natW * baseScale * z, imgH = natH * baseScale * z;
+    const tx = imgW > FW ? -(crop.fx * (imgW - FW)) : (FW - imgW) / 2;
+    const ty = imgH > FH ? -(crop.fy * (imgH - FH)) : (FH - imgH) / 2;
+
+    cropState = { photoId: id, natW, natH, FW, FH, baseScale, z, tx, ty };
+    imgEl.src = p.dataUrl;
+    imgEl.style.width = imgW + 'px';
+    imgEl.style.height = imgH + 'px';
+    imgEl.style.transform = `translate(${tx}px, ${ty}px)`;
+    document.getElementById('cropZoom').value = Math.round(z * 100);
+  };
+  natImg.src = p.dataUrl;
+}
+
+function closeCropEditor(){
+  document.getElementById('cropModal').style.display = 'none';
+  cropState = null;
+}
+
+function applyCropTransform(){
+  const imgEl = document.getElementById('cropImg');
+  const s = cropState;
+  const imgW = s.natW * s.baseScale * s.z, imgH = s.natH * s.baseScale * s.z;
+  s.tx = Math.min(0, Math.max(s.FW - imgW, s.tx));
+  s.ty = Math.min(0, Math.max(s.FH - imgH, s.ty));
+  imgEl.style.width = imgW + 'px';
+  imgEl.style.height = imgH + 'px';
+  imgEl.style.transform = `translate(${s.tx}px, ${s.ty}px)`;
+}
+
+(function setupCropInteractions(){
+  const frame = document.getElementById('cropFrame');
+  const zoomInput = document.getElementById('cropZoom');
+  let dragging = false, lastX = 0, lastY = 0;
+
+  frame.addEventListener('pointerdown', function(e){
+    if(!cropState) return;
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    frame.setPointerCapture(e.pointerId);
+  });
+  frame.addEventListener('pointermove', function(e){
+    if(!dragging || !cropState) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    cropState.tx += dx; cropState.ty += dy;
+    applyCropTransform();
+  });
+  function endDrag(){ dragging = false; }
+  frame.addEventListener('pointerup', endDrag);
+  frame.addEventListener('pointercancel', endDrag);
+  frame.addEventListener('pointerleave', endDrag);
+
+  zoomInput.addEventListener('input', function(){
+    if(!cropState) return;
+    const s = cropState;
+    const oldImgW = s.natW * s.baseScale * s.z, oldImgH = s.natH * s.baseScale * s.z;
+    const cx = (s.FW / 2 - s.tx) / oldImgW, cy = (s.FH / 2 - s.ty) / oldImgH;
+    s.z = zoomInput.value / 100;
+    const newImgW = s.natW * s.baseScale * s.z, newImgH = s.natH * s.baseScale * s.z;
+    s.tx = s.FW / 2 - cx * newImgW;
+    s.ty = s.FH / 2 - cy * newImgH;
+    applyCropTransform();
+  });
+})();
+
+function saveCrop(){
+  const s = cropState;
+  if(!s) return;
+  const p = photos.find(x => x.id === s.photoId);
+  if(!p) return;
+
+  const imgW = s.natW * s.baseScale * s.z, imgH = s.natH * s.baseScale * s.z;
+  const fx = imgW > s.FW ? (-s.tx) / (imgW - s.FW) : 0.5;
+  const fy = imgH > s.FH ? (-s.ty) / (imgH - s.FH) : 0.5;
+  p.crop = { zoom: s.z, fx: Math.min(1, Math.max(0, fx)), fy: Math.min(1, Math.max(0, fy)) };
+
+  // rasterize the visible region in natural-pixel space
+  const scaleNatToCss = s.baseScale * s.z;
+  const sWidth = Math.min(s.natW, s.FW / scaleNatToCss);
+  const sHeight = Math.min(s.natH, s.FH / scaleNatToCss);
+  const sx = Math.min(Math.max(0, (-s.tx) / scaleNatToCss), s.natW - sWidth);
+  const sy = Math.min(Math.max(0, (-s.ty) / scaleNatToCss), s.natH - sHeight);
+
+  const srcImg = new Image();
+  srcImg.onload = function(){
+    const outW = 1000, outH = 750;
+    const canvas = document.createElement('canvas');
+    canvas.width = outW; canvas.height = outH;
+    canvas.getContext('2d').drawImage(srcImg, sx, sy, sWidth, sHeight, 0, 0, outW, outH);
+    p.cropDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+    save(); render();
+    closeCropEditor();
+    showToast('Kırpma kaydedildi ✓');
+  };
+  srcImg.src = p.dataUrl;
+}
+
 function openTitleModal(){
   if(photos.length === 0){ alert('Önce en az bir fotoğraf ekle.'); return; }
   document.getElementById('titleModal').style.display = 'flex';
@@ -322,6 +471,7 @@ async function exportPdf(){
   for(let i = 0; i < photos.length; i++){
     progress.textContent = `Sayfa ${i+1} / ${photos.length}`;
     const p = photos[i];
+    const photoSrc = p.cropDataUrl || p.dataUrl;
     const noteHtml = p.note
       ? `<div style="margin-top:22px;font-size:16px;line-height:1.6;color:#2b2420;white-space:pre-wrap;
            font-family:Georgia,serif;padding:0 40px;text-align:left;">${escapeHtml(p.note)}</div>`
@@ -330,7 +480,7 @@ async function exportPdf(){
       <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
         background:#fffdf9;padding:50px 40px;">
         <div style="width:100%;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-          <img src="${p.dataUrl}" style="max-width:100%;max-height:760px;object-fit:contain;
+          <img src="${photoSrc}" style="max-width:100%;max-height:760px;object-fit:contain;
             border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.12);">
         </div>
         ${noteHtml}
