@@ -60,10 +60,11 @@
     -webkit-user-drag:none;pointer-events:none;}
   #cropModal input[type=range]{width:100%;margin-top:14px;}
   #cropModal .zoomLabel{font-size:12px;color:#7a6f60;display:flex;justify-content:space-between;}
-  #cropModal .orientRow{display:flex;gap:8px;margin:12px 0;}
-  #cropModal .orientRow button{flex:1;border:1px solid var(--line);background:#f6f1e7;
+  .orientRow{display:flex;gap:8px;margin:12px 0;}
+  .orientRow button{flex:1;border:1px solid var(--line);background:#f6f1e7;
     border-radius:8px;padding:9px 0;font-size:13px;font-weight:600;color:#7a6f60;}
-  #cropModal .orientRow button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .orientRow button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .orientRow button.active::after{content:' ✓';}
   #cropModal .row{display:flex;gap:8px;margin-top:16px;}
   #cropModal .row .btn{flex:1;justify-content:center;}
   footer.bar{position:fixed;bottom:0;left:0;right:0;background:var(--paper);
@@ -124,6 +125,7 @@
       <button id="layout2Btn" onclick="setPdfLayout(2)">2 / sayfa</button>
       <button id="layout4Btn" onclick="setPdfLayout(4)">4 / sayfa</button>
     </div>
+    <div id="layoutSelectedLabel" style="text-align:center;font-size:12px;color:#7a6f60;margin-top:2px;"></div>
     <div class="row">
       <button class="btn btn-ghost" onclick="closeTitleModal()">Vazgeç</button>
       <button class="btn btn-primary" onclick="exportPdf()">Oluştur</button>
@@ -465,6 +467,7 @@ function setPdfLayout(n){
   document.getElementById('layout1Btn').classList.toggle('active', n === 1);
   document.getElementById('layout2Btn').classList.toggle('active', n === 2);
   document.getElementById('layout4Btn').classList.toggle('active', n === 4);
+  document.getElementById('layoutSelectedLabel').textContent = `Seçili: sayfa başına ${n} fotoğraf`;
 }
 
 function openTitleModal(){
@@ -483,100 +486,116 @@ async function exportPdf(){
   const progress = document.getElementById('pdfProgress');
   overlay.style.display = 'flex';
 
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
+  let stage;
+  try{
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
 
-  // Turkish-character-safe rendering: build each page as an HTML node,
-  // rasterize with html2canvas, then place the image into the PDF.
-  const stage = document.createElement('div');
-  stage.style.position = 'fixed';
-  stage.style.left = '-9999px';
-  stage.style.top = '0';
-  stage.style.width = '794px'; // ~A4 at 96dpi
-  document.body.appendChild(stage);
+    // Turkish-character-safe rendering: build each page as an HTML node,
+    // rasterize with html2canvas, then place the image into the PDF.
+    stage = document.createElement('div');
+    stage.style.position = 'fixed';
+    stage.style.left = '-9999px';
+    stage.style.top = '0';
+    stage.style.width = '794px'; // ~A4 at 96dpi
+    document.body.appendChild(stage);
 
-  async function renderPageToPdf(innerHtml, isFirst){
-    stage.innerHTML = innerHtml;
-    await new Promise(r => setTimeout(r, 30));
-    const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#fffdf9' });
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
-    if(!isFirst) pdf.addPage();
-    pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
-  }
+    async function renderPageToPdf(innerHtml, isFirst){
+      stage.innerHTML = innerHtml;
+      await new Promise(r => setTimeout(r, 30));
+      const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#fffdf9' });
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      if(!isFirst) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
+    }
 
-  // Cover page
-  const coverHtml = `
-    <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
-      justify-content:center;font-family:Georgia,serif;background:#fffdf9;padding:60px;">
-      <div style="font-size:14px;letter-spacing:3px;color:#a8562e;text-transform:uppercase;margin-bottom:18px;">Foto Albüm</div>
-      <div style="font-size:40px;font-weight:700;color:#2b2420;text-align:center;line-height:1.3;">${escapeHtml(title)}</div>
-      <div style="margin-top:24px;font-size:14px;color:#7a6f60;">${photos.length} fotoğraf</div>
-      <div style="margin-top:60px;font-size:12px;color:#b0a48f;">${new Date().toLocaleDateString('tr-TR')}</div>
-    </div>`;
-  await renderPageToPdf(coverHtml, true);
-
-  function photoCellHtml(p, index, cellHeight, noteFontSize, notePadding){
-    const photoSrc = p.cropDataUrl || p.dataUrl;
-    const noteHtml = p.note
-      ? `<div style="margin-top:10px;font-size:${noteFontSize}px;line-height:1.5;color:#2b2420;
-           white-space:pre-wrap;font-family:Georgia,serif;padding:0 ${notePadding}px;
-           text-align:left;overflow:hidden;">${escapeHtml(p.note)}</div>`
-      : '';
-    return `
-      <div style="display:flex;flex-direction:column;align-items:center;height:100%;overflow:hidden;">
-        <div style="width:100%;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;">
-          <img src="${photoSrc}" style="max-width:100%;max-height:${cellHeight}px;object-fit:contain;
-            border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.12);">
-        </div>
-        ${noteHtml}
+    // Cover page
+    const coverHtml = `
+      <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
+        justify-content:center;font-family:Georgia,serif;background:#fffdf9;padding:60px;">
+        <div style="font-size:14px;letter-spacing:3px;color:#a8562e;text-transform:uppercase;margin-bottom:18px;">Foto Albüm</div>
+        <div style="font-size:40px;font-weight:700;color:#2b2420;text-align:center;line-height:1.3;">${escapeHtml(title)}</div>
+        <div style="margin-top:24px;font-size:14px;color:#7a6f60;">${photos.length} fotoğraf</div>
+        <div style="margin-top:60px;font-size:12px;color:#b0a48f;">${new Date().toLocaleDateString('tr-TR')}</div>
       </div>`;
-  }
+    await renderPageToPdf(coverHtml, true);
 
-  const perPage = pdfLayout;
-  const pageCount = Math.ceil(photos.length / perPage);
+    const PAGE_W = 794, PAGE_H = 1123, PAD_X = 40, TOP = 44, BOTTOM_RESERVE = 34;
+    const contentW = PAGE_W - PAD_X * 2;
+    const contentH = PAGE_H - TOP - BOTTOM_RESERVE;
 
-  for(let pg = 0; pg < pageCount; pg++){
-    const group = photos.slice(pg * perPage, pg * perPage + perPage);
-    progress.textContent = `Sayfa ${pg+1} / ${pageCount}`;
-
-    let bodyHtml;
-    if(perPage === 1){
-      bodyHtml = `<div style="flex:1;min-height:0;">${photoCellHtml(group[0], 0, 760, 16, 40)}</div>`;
-    } else if(perPage === 2){
-      bodyHtml = `
-        <div style="flex:1;min-height:0;display:grid;grid-template-rows:1fr 1fr;gap:24px;width:100%;">
-          ${group.map(p => photoCellHtml(p, 0, 400, 13, 20)).join('')}
-        </div>`;
-    } else {
-      bodyHtml = `
-        <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:18px;width:100%;">
-          ${group.map(p => photoCellHtml(p, 0, 230, 11, 8)).join('')}
+    function photoCellHtml(p, left, top, w, h, noteFontSize){
+      const photoSrc = p.cropDataUrl || p.dataUrl;
+      const hasNote = !!p.note;
+      const noteH = hasNote ? Math.min(Math.round(h * 0.28), noteFontSize * 7) : 0;
+      const imgAreaH = h - noteH;
+      const noteHtml = hasNote
+        ? `<div style="position:absolute;left:0;top:${imgAreaH}px;width:100%;height:${noteH}px;
+             font-size:${noteFontSize}px;line-height:1.4;color:#2b2420;white-space:pre-wrap;
+             font-family:Georgia,serif;overflow:hidden;text-align:left;">${escapeHtml(p.note)}</div>`
+        : '';
+      return `
+        <div style="position:absolute;left:${left}px;top:${top}px;width:${w}px;height:${h}px;">
+          <div style="position:absolute;left:0;top:0;width:100%;height:${imgAreaH}px;
+            display:flex;align-items:center;justify-content:center;overflow:hidden;">
+            <img src="${photoSrc}" style="max-width:100%;max-height:100%;object-fit:contain;
+              border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.12);">
+          </div>
+          ${noteHtml}
         </div>`;
     }
 
-    const pageHtml = `
-      <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
-        background:#fffdf9;padding:44px 40px;">
-        ${bodyHtml}
-        <div style="margin-top:14px;font-size:11px;color:#b0a48f;">${pg+1} / ${pageCount}</div>
-      </div>`;
-    await renderPageToPdf(pageHtml, false);
-  }
+    const perPage = pdfLayout;
+    const pageCount = Math.ceil(photos.length / perPage);
 
-  document.body.removeChild(stage);
-  overlay.style.display = 'none';
+    for(let pg = 0; pg < pageCount; pg++){
+      const group = photos.slice(pg * perPage, pg * perPage + perPage);
+      progress.textContent = `Sayfa ${pg+1} / ${pageCount}`;
 
-  const fileName = `${title.replace(/[^\p{L}\p{N}\- ]/gu,'').trim() || 'foto-albumu'}.pdf`;
+      let cellsHtml = '';
+      if(perPage === 1){
+        cellsHtml = photoCellHtml(group[0], PAD_X, TOP, contentW, contentH, 15);
+      } else if(perPage === 2){
+        const gap = 24, cellH = (contentH - gap) / 2;
+        group.forEach((p, i) => {
+          cellsHtml += photoCellHtml(p, PAD_X, TOP + i * (cellH + gap), contentW, cellH, 13);
+        });
+      } else {
+        const gap = 18;
+        const cellW = (contentW - gap) / 2, cellH = (contentH - gap) / 2;
+        group.forEach((p, i) => {
+          const col = i % 2, row = Math.floor(i / 2);
+          cellsHtml += photoCellHtml(p, PAD_X + col * (cellW + gap), TOP + row * (cellH + gap), cellW, cellH, 11);
+        });
+      }
 
-  if (window.AndroidFileSaver) {
-    // Running inside the Android WebView wrapper: hand the PDF to native code
-    // so it lands in the Downloads folder (in-browser downloads don't work in WebView).
-    const base64 = pdf.output('datauristring').split(',')[1];
-    window.AndroidFileSaver.saveBase64(base64, fileName);
-  } else {
-    pdf.save(fileName);
+      const pageHtml = `
+        <div style="position:relative;width:${PAGE_W}px;height:${PAGE_H}px;background:#fffdf9;">
+          ${cellsHtml}
+          <div style="position:absolute;left:0;bottom:10px;width:100%;text-align:center;
+            font-size:11px;color:#b0a48f;">${pg+1} / ${pageCount}</div>
+        </div>`;
+      await renderPageToPdf(pageHtml, false);
+    }
+
+    const fileName = `${title.replace(/[^\p{L}\p{N}\- ]/gu,'').trim() || 'foto-albumu'}.pdf`;
+
+    if (window.AndroidFileSaver) {
+      // Running inside the Android WebView wrapper: hand the PDF to native code
+      // so it lands in the Downloads folder (in-browser downloads don't work in WebView).
+      const base64 = pdf.output('datauristring').split(',')[1];
+      window.AndroidFileSaver.saveBase64(base64, fileName);
+    } else {
+      pdf.save(fileName);
+    }
+  } catch(err){
+    console.error('PDF oluşturma hatası:', err);
+    alert('PDF oluşturulurken bir hata oluştu: ' + (err && err.message ? err.message : err));
+  } finally {
+    if(stage && stage.parentNode) document.body.removeChild(stage);
+    overlay.style.display = 'none';
   }
 }
 
