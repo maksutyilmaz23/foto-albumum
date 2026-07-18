@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Foto Albümüm</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root{
+    --paper:#f6f1e7;
+    --ink:#2b2420;
+    --line:#d8cdb8;
+    --accent:#a8562e;
+    --accent-dark:#7c3f21;
+    --card:#fffdf9;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+  body{padding-bottom:90px;}
+  header{position:sticky;top:0;z-index:10;background:var(--paper);
+    border-bottom:1px solid var(--line);padding:16px 16px 12px;}
+  header h1{margin:0;font-size:21px;letter-spacing:.3px;font-weight:700;}
+  header p{margin:4px 0 0;font-size:13px;color:#7a6f60;}
+  .toolbar{display:flex;gap:8px;padding:12px 16px 0;flex-wrap:wrap;}
+  .btn{border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:600;
+    display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:active{background:var(--accent-dark);}
+  .btn-ghost{background:#eee3cf;color:var(--ink);}
+  .btn-ghost:active{background:#e2d3b4;}
+  #fileInput{display:none;}
+  #empty{margin:60px 24px;text-align:center;color:#9a8f7e;}
+  #empty .big{font-size:40px;margin-bottom:10px;}
+  #grid{padding:16px;display:flex;flex-direction:column;gap:16px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    box-shadow:0 1px 3px rgba(43,36,32,.06);}
+  .card .num{font-size:11px;color:#a8562e;font-weight:700;letter-spacing:.5px;
+    padding:10px 14px 0;text-transform:uppercase;}
+  .card img{width:100%;display:block;max-height:420px;object-fit:cover;background:#eee3cf;}
+  .card textarea{width:100%;border:none;resize:vertical;min-height:56px;padding:12px 14px;
+    font-size:14px;font-family:inherit;color:var(--ink);background:transparent;outline:none;}
+  .card textarea::placeholder{color:#b0a48f;}
+  .card-actions{display:flex;border-top:1px solid var(--line);}
+  .card-actions button{flex:1;border:none;background:none;padding:11px 0;font-size:13px;
+    color:#7a6f60;font-weight:600;}
+  .card-actions button:active{background:#f0e8d8;}
+  .card-actions button.danger{color:#b23a2e;}
+  footer.bar{position:fixed;bottom:0;left:0;right:0;background:var(--paper);
+    border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex;gap:10px;}
+  footer.bar .btn{flex:1;justify-content:center;}
+  #pdfOverlay{position:fixed;inset:0;background:rgba(43,36,32,.55);display:none;
+    align-items:center;justify-content:center;z-index:50;}
+  #pdfOverlay .box{background:var(--card);padding:22px 26px;border-radius:14px;text-align:center;
+    font-size:14px;max-width:80%;}
+  #titleModal{position:fixed;inset:0;background:rgba(43,36,32,.55);display:none;
+    align-items:center;justify-content:center;z-index:50;padding:20px;}
+  #titleModal .box{background:var(--card);padding:20px;border-radius:14px;width:100%;max-width:360px;}
+  #titleModal input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;
+    font-size:15px;margin-top:10px;font-family:inherit;}
+  #titleModal .row{display:flex;gap:8px;margin-top:16px;}
+  #titleModal .row .btn{flex:1;justify-content:center;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📔 Foto Albümüm</h1>
+  <p>Fotoğraf ekle, altına not yaz, PDF fotokitap olarak dışa aktar.</p>
+</header>
+
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">＋ Fotoğraf Ekle</button>
+  <button class="btn btn-ghost" onclick="openTitleModal()">📕 PDF Oluştur</button>
+</div>
+<input type="file" id="fileInput" accept="image/*" multiple>
+
+<div id="empty">
+  <div class="big">🖼️</div>
+  Henüz fotoğraf eklenmedi.<br>Başlamak için "Fotoğraf Ekle" butonuna dokun.
+</div>
+
+<div id="grid"></div>
+
+<div id="titleModal">
+  <div class="box">
+    <strong>Albüm Başlığı</strong>
+    <input id="albumTitleInput" type="text" placeholder="Örn. Yaz Tatili 2026" maxlength="80">
+    <div class="row">
+      <button class="btn btn-ghost" onclick="closeTitleModal()">Vazgeç</button>
+      <button class="btn btn-primary" onclick="exportPdf()">Oluştur</button>
+    </div>
+  </div>
+</div>
+
+<div id="pdfOverlay"><div class="box">PDF hazırlanıyor…<br><small id="pdfProgress"></small></div></div>
+
+<script>
+const STORAGE_KEY = 'fotoalbum_v1';
+let photos = []; // {id, dataUrl, note}
+
+function uid(){ return 'p' + Date.now() + Math.random().toString(36).slice(2,8); }
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    photos = raw ? JSON.parse(raw) : [];
+  }catch(e){ photos = []; }
+}
+function save(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(photos)); }
+  catch(e){ alert('Depolama alanı dolu olabilir. Bazı fotoğrafları silmeyi deneyin.'); }
+}
+
+function render(){
+  const grid = document.getElementById('grid');
+  const empty = document.getElementById('empty');
+  if(photos.length === 0){
+    grid.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = photos.map((p, i) => `
+    <div class="card" data-id="${p.id}">
+      <div class="num">Sayfa ${i+1} / ${photos.length}</div>
+      <img src="${p.dataUrl}" alt="fotoğraf ${i+1}">
+      <textarea placeholder="Bu fotoğraf için not yaz…" oninput="updateNote('${p.id}', this.value)">${escapeHtml(p.note||'')}</textarea>
+      <div class="card-actions">
+        <button onclick="moveUp('${p.id}')">↑ Yukarı</button>
+        <button onclick="moveDown('${p.id}')">↓ Aşağı</button>
+        <button class="danger" onclick="removePhoto('${p.id}')">🗑 Sil</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(s){
+  const d = document.createElement('div');
+  d.innerText = s;
+  return d.innerHTML;
+}
+
+function updateNote(id, value){
+  const p = photos.find(x => x.id === id);
+  if(p){ p.note = value; save(); }
+}
+
+function moveUp(id){
+  const i = photos.findIndex(x => x.id === id);
+  if(i > 0){ [photos[i-1], photos[i]] = [photos[i], photos[i-1]]; save(); render(); }
+}
+function moveDown(id){
+  const i = photos.findIndex(x => x.id === id);
+  if(i < photos.length - 1){ [photos[i+1], photos[i]] = [photos[i], photos[i+1]]; save(); render(); }
+}
+function removePhoto(id){
+  if(!confirm('Bu fotoğrafı silmek istediğine emin misin?')) return;
+  photos = photos.filter(x => x.id !== id);
+  save(); render();
+}
+
+document.getElementById('fileInput').addEventListener('change', function(e){
+  const files = Array.from(e.target.files || []);
+  let pending = files.length;
+  if(pending === 0) return;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      // downscale large images to keep storage/PDF manageable
+      const img = new Image();
+      img.onload = function(){
+        const maxDim = 1600;
+        let {width, height} = img;
+        if(width > maxDim || height > maxDim){
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        photos.push({ id: uid(), dataUrl: canvas.toDataURL('image/jpeg', 0.85), note: '' });
+        pending--;
+        if(pending === 0){ save(); render(); }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value = '';
+});
+
+function openTitleModal(){
+  if(photos.length === 0){ alert('Önce en az bir fotoğraf ekle.'); return; }
+  document.getElementById('titleModal').style.display = 'flex';
+}
+function closeTitleModal(){
+  document.getElementById('titleModal').style.display = 'none';
+}
+
+async function exportPdf(){
+  const title = document.getElementById('albumTitleInput').value.trim() || 'Foto Albümüm';
+  closeTitleModal();
+  const overlay = document.getElementById('pdfOverlay');
+  const progress = document.getElementById('pdfProgress');
+  overlay.style.display = 'flex';
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+
+  // Turkish-character-safe rendering: build each page as an HTML node,
+  // rasterize with html2canvas, then place the image into the PDF.
+  const stage = document.createElement('div');
+  stage.style.position = 'fixed';
+  stage.style.left = '-9999px';
+  stage.style.top = '0';
+  stage.style.width = '794px'; // ~A4 at 96dpi
+  document.body.appendChild(stage);
+
+  async function renderPageToPdf(innerHtml, isFirst){
+    stage.innerHTML = innerHtml;
+    await new Promise(r => setTimeout(r, 30));
+    const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#fffdf9' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    if(!isFirst) pdf.addPage();
+    pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
+  }
+
+  // Cover page
+  const coverHtml = `
+    <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;font-family:Georgia,serif;background:#fffdf9;padding:60px;">
+      <div style="font-size:14px;letter-spacing:3px;color:#a8562e;text-transform:uppercase;margin-bottom:18px;">Foto Albüm</div>
+      <div style="font-size:40px;font-weight:700;color:#2b2420;text-align:center;line-height:1.3;">${escapeHtml(title)}</div>
+      <div style="margin-top:24px;font-size:14px;color:#7a6f60;">${photos.length} fotoğraf</div>
+      <div style="margin-top:60px;font-size:12px;color:#b0a48f;">${new Date().toLocaleDateString('tr-TR')}</div>
+    </div>`;
+  await renderPageToPdf(coverHtml, true);
+
+  for(let i = 0; i < photos.length; i++){
+    progress.textContent = `Sayfa ${i+1} / ${photos.length}`;
+    const p = photos[i];
+    const noteHtml = p.note
+      ? `<div style="margin-top:22px;font-size:16px;line-height:1.6;color:#2b2420;white-space:pre-wrap;
+           font-family:Georgia,serif;padding:0 40px;text-align:left;">${escapeHtml(p.note)}</div>`
+      : '';
+    const pageHtml = `
+      <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
+        background:#fffdf9;padding:50px 40px;">
+        <div style="width:100%;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+          <img src="${p.dataUrl}" style="max-width:100%;max-height:760px;object-fit:contain;
+            border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.12);">
+        </div>
+        ${noteHtml}
+        <div style="margin-top:16px;font-size:11px;color:#b0a48f;">${i+1} / ${photos.length}</div>
+      </div>`;
+    await renderPageToPdf(pageHtml, false);
+  }
+
+  document.body.removeChild(stage);
+  overlay.style.display = 'none';
+
+  const fileName = `${title.replace(/[^\p{L}\p{N}\- ]/gu,'').trim() || 'foto-albumu'}.pdf`;
+
+  if (window.AndroidPdfSaver) {
+    // Running inside the Android WebView wrapper: hand the PDF to native code
+    // so it lands in the Downloads folder (in-browser downloads don't work in WebView).
+    const base64 = pdf.output('datauristring').split(',')[1];
+    window.AndroidPdfSaver.savePdf(base64, fileName);
+  } else {
+    pdf.save(fileName);
+  }
+}
+
+load();
+render();
+</script>
+</body>
+</html>
