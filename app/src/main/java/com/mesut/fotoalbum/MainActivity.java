@@ -113,17 +113,54 @@ public class MainActivity extends Activity {
         private void writeToDownloads(final byte[] bytes, final String fileName) {
             runOnUiThread(() -> {
                 try {
-                    File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-                    if (!dir.exists()) dir.mkdirs();
-                    File outFile = new File(dir, fileName);
-                    FileOutputStream fos = new FileOutputStream(outFile);
-                    fos.write(bytes);
-                    fos.close();
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        saveViaMediaStore(bytes, fileName);
+                    } else {
+                        saveLegacy(bytes, fileName);
+                    }
                     Toast.makeText(MainActivity.this, "Kaydedildi: İndirilenler/" + fileName, Toast.LENGTH_LONG).show();
                 } catch (Exception e) {
                     Toast.makeText(MainActivity.this, "Kaydedilemedi: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 }
             });
+        }
+
+        private String mimeTypeFor(String fileName) {
+            if (fileName.toLowerCase().endsWith(".json")) return "application/json";
+            if (fileName.toLowerCase().endsWith(".pdf")) return "application/pdf";
+            return "application/octet-stream";
+        }
+
+        /** Android 10+ (API 29+): direct File writes to public Downloads are blocked by
+         *  Scoped Storage, so we must go through MediaStore instead. */
+        private void saveViaMediaStore(byte[] bytes, String fileName) throws Exception {
+            android.content.ContentValues values = new android.content.ContentValues();
+            values.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, fileName);
+            values.put(android.provider.MediaStore.Downloads.MIME_TYPE, mimeTypeFor(fileName));
+            values.put(android.provider.MediaStore.Downloads.IS_PENDING, 1);
+
+            android.content.ContentResolver resolver = getContentResolver();
+            Uri collection = android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            Uri item = resolver.insert(collection, values);
+            if (item == null) throw new java.io.IOException("MediaStore kaydı oluşturulamadı");
+
+            try (java.io.OutputStream out = resolver.openOutputStream(item)) {
+                if (out == null) throw new java.io.IOException("Çıkış akışı açılamadı");
+                out.write(bytes);
+            }
+            values.clear();
+            values.put(android.provider.MediaStore.Downloads.IS_PENDING, 0);
+            resolver.update(item, values, null, null);
+        }
+
+        /** Pre-Android 10: plain File writes to the public Downloads directory still work. */
+        private void saveLegacy(byte[] bytes, String fileName) throws Exception {
+            File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+            if (!dir.exists()) dir.mkdirs();
+            File outFile = new File(dir, fileName);
+            FileOutputStream fos = new FileOutputStream(outFile);
+            fos.write(bytes);
+            fos.close();
         }
     }
 }
