@@ -43,9 +43,9 @@
   .card textarea{width:100%;border:none;resize:vertical;min-height:56px;padding:12px 14px;
     font-size:14px;font-family:inherit;color:var(--ink);background:transparent;outline:none;}
   .card textarea::placeholder{color:#b0a48f;}
-  .card-actions{display:flex;border-top:1px solid var(--line);}
-  .card-actions button{flex:1;border:none;background:none;padding:11px 0;font-size:13px;
-    color:#7a6f60;font-weight:600;}
+  .card-actions{display:flex;flex-wrap:wrap;border-top:1px solid var(--line);}
+  .card-actions button{flex:1 1 33%;min-width:70px;border:none;background:none;padding:11px 0;font-size:12px;
+    color:#7a6f60;font-weight:600;border-top:1px solid var(--line);margin-top:-1px;}
   .card-actions button:active{background:#f0e8d8;}
   .card-actions button.danger{color:#b23a2e;}
   #cropModal{position:fixed;inset:0;background:rgba(43,36,32,.85);display:none;
@@ -86,6 +86,36 @@
     background:#2b2420;color:#fffdf9;padding:11px 20px;border-radius:10px;font-size:13px;
     font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;z-index:60;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  #settingsModal,#frameModal{position:fixed;inset:0;background:rgba(43,36,32,.85);display:none;
+    align-items:center;justify-content:center;z-index:55;padding:16px;}
+  #settingsModal .box,#frameModal .box{background:var(--card);border-radius:14px;width:100%;
+    max-width:420px;max-height:85vh;overflow-y:auto;padding:18px;}
+  #settingsModal h3,#frameModal h3{margin:0 0 10px;font-size:15px;}
+  #settingsModal .sectionLabel{font-size:12px;font-weight:700;color:#a8562e;text-transform:uppercase;
+    letter-spacing:.4px;margin:16px 0 8px;}
+  #settingsModal .sectionLabel:first-of-type{margin-top:0;}
+  .swatchRow{display:flex;flex-wrap:wrap;gap:10px;}
+  .swatch{width:38px;height:38px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+    position:relative;flex:0 0 auto;}
+  .swatch.active{border-color:var(--accent);}
+  .swatch.active::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;
+    justify-content:center;font-size:15px;color:#5a4a38;}
+  .checkRow{display:flex;align-items:center;gap:10px;padding:6px 0;}
+  .checkRow input{width:20px;height:20px;}
+  .checkRow label{font-size:13px;color:var(--ink);}
+  .stackBtns{display:flex;flex-direction:column;gap:8px;}
+  .stackBtns button{text-align:left;border:1px solid var(--line);background:#f6f1e7;
+    border-radius:8px;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);}
+  .stackBtns button:active{background:#eee3cf;}
+  #frameModal .frameGrid{display:flex;flex-direction:column;gap:8px;}
+  #frameModal .frameGrid button{display:flex;align-items:center;justify-content:space-between;
+    border:1px solid var(--line);background:#f6f1e7;border-radius:10px;padding:12px 14px;
+    font-size:13px;font-weight:600;color:var(--ink);}
+  #frameModal .frameGrid button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  #frameModal .frameGrid button.active::after{content:'✓';}
+  #settingsModal .row,#frameModal .row{display:flex;gap:8px;margin-top:16px;}
+  #settingsModal .row .btn,#frameModal .row .btn{flex:1;justify-content:center;}
 </style>
 </head>
 <body>
@@ -103,6 +133,7 @@
 <div class="toolbar">
   <button class="btn btn-ghost" onclick="exportBackup()">⬇️ JSON Yedek Al</button>
   <button class="btn btn-ghost" onclick="document.getElementById('jsonInput').click()">⬆️ Yedekten Yükle</button>
+  <button class="btn btn-ghost" onclick="openSettingsModal()">⚙️ Ayarlar</button>
 </div>
 <input type="file" id="fileInput" accept="image/*" multiple>
 <input type="file" id="jsonInput" accept="application/json,.json">
@@ -155,11 +186,97 @@
   </div>
 </div>
 
+<div id="settingsModal">
+  <div class="box">
+    <h3>⚙️ Ayarlar</h3>
+
+    <div class="sectionLabel">Arka Plan Rengi</div>
+    <div class="swatchRow" id="swatchRow"></div>
+
+    <div class="sectionLabel">Konum</div>
+    <div class="checkRow">
+      <input type="checkbox" id="addLocationCheck" onchange="toggleAddLocation(this.checked)">
+      <label for="addLocationCheck">📍 Yeni eklenen fotoğraflarda konum bilgisi varsa notlara otomatik eklensin</label>
+    </div>
+
+    <div class="sectionLabel">Sıralama</div>
+    <div class="stackBtns">
+      <button onclick="sortByDate()">🕒 Tarihe Göre Sırala</button>
+      <button onclick="sortByOrientation('landscapeFirst')">▭ → ▯ Yataydan Dikeye Sırala</button>
+      <button onclick="sortByOrientation('portraitFirst')">▯ → ▭ Dikeyden Yataya Sırala</button>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary" onclick="closeSettingsModal()">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<div id="frameModal">
+  <div class="box">
+    <h3>🎀 Çerçeve & Süsleme</h3>
+    <p class="hint">Fotoğrafın etrafına eklenecek çerçeve stilini seç.</p>
+    <div class="frameGrid" id="frameGrid"></div>
+    <div class="row">
+      <button class="btn btn-primary" onclick="closeFrameModal()">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const STORAGE_KEY = 'fotoalbum_v1';
-let photos = []; // {id, dataUrl, note}
+const SETTINGS_KEY = 'fotoalbum_settings_v1';
+let photos = []; // {id, dataUrl, note, orientation, crop, cropDataUrl, frame, addedAt}
+let settings = { bgColor: '#f6f1e7', addLocation: false };
 
 function uid(){ return 'p' + Date.now() + Math.random().toString(36).slice(2,8); }
+
+const PASTELS = [
+  { id:'cream',    hex:'#f6f1e7', label:'Krem' },
+  { id:'blush',    hex:'#fbe4e4', label:'Pudra' },
+  { id:'mint',     hex:'#e3f3ea', label:'Nane' },
+  { id:'sky',      hex:'#e3edf7', label:'Gökyüzü' },
+  { id:'lavender', hex:'#ece3f5', label:'Lavanta' },
+  { id:'butter',   hex:'#fdf3d9', label:'Tereyağı' },
+  { id:'peach',    hex:'#fbe8db', label:'Şeftali' },
+  { id:'sage',     hex:'#e9efe3', label:'Adaçayı' }
+];
+
+const FRAME_DEFS = {
+  none:     { label:'Çerçevesiz',       css: ()=> '' },
+  polaroid: { label:'Polaroid',         css: ()=> 'padding:5% 5% 16% 5%;background:#ffffff;box-shadow:0 4px 14px rgba(0,0,0,.18);' },
+  mat:      { label:'Pastel Paspartu',  css: (bg)=> `padding:7%;background:${bg};box-shadow:0 2px 10px rgba(0,0,0,.12);` },
+  dashed:   { label:'Kesikli Çizgi',    css: ()=> 'padding:3%;border:3px dashed #a8562e;background:#fff;' },
+  dotted:   { label:'Noktalı Çizgi',    css: ()=> 'padding:3%;border:3px dotted #a8562e;background:#fff;' },
+  double:   { label:'Çift Çizgi',       css: ()=> 'padding:2%;border:6px double #a8562e;background:#fff;' },
+  rounded:  { label:'Yuvarlak Köşeli',  css: ()=> 'padding:3%;border-radius:22px;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.15);', imgRadius:16 },
+  thick:    { label:'Kalın Renkli',     css: ()=> 'padding:4%;border:8px solid #a8562e;background:#fff;' },
+  shadow:   { label:'Yumuşak Gölge',    css: ()=> 'box-shadow:0 8px 22px rgba(0,0,0,.22);' },
+  sticker:  { label:'Sticker',          css: ()=> 'padding:4%;border-radius:26px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.22);', imgRadius:20 }
+};
+
+function frameStyleCss(frameId){
+  const f = FRAME_DEFS[frameId] || FRAME_DEFS.none;
+  return f.css(settings.bgColor);
+}
+function frameImgStyle(frameId){
+  const f = FRAME_DEFS[frameId] || FRAME_DEFS.none;
+  return f.imgRadius ? `border-radius:${f.imgRadius}px;` : '';
+}
+
+function loadSettings(){
+  try{
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if(raw) settings = Object.assign(settings, JSON.parse(raw));
+  }catch(e){}
+  applyBgColor();
+}
+function saveSettings(){
+  try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }catch(e){}
+}
+function applyBgColor(){
+  document.documentElement.style.setProperty('--paper', settings.bgColor);
+}
 
 function load(){
   try{
@@ -184,9 +301,10 @@ function render(){
   grid.innerHTML = photos.map((p, i) => `
     <div class="card" data-id="${p.id}">
       <div class="num">Sayfa ${i+1} / ${photos.length}</div>
-      <div class="imgFrame" style="aspect-ratio:${p.orientation === 'portrait' ? '3/4' : '4/3'};"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}"></div>
+      <div class="imgFrame" style="aspect-ratio:${p.orientation === 'portrait' ? '3/4' : '4/3'};box-sizing:border-box;${frameStyleCss(p.frame)}"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}" style="${frameImgStyle(p.frame)}"></div>
       <textarea placeholder="Bu fotoğraf için not yaz…" oninput="updateNote('${p.id}', this.value)">${escapeHtml(p.note||'')}</textarea>
       <div class="card-actions">
+        <button onclick="openFrameEditor('${p.id}')">🎀 Çerçeve</button>
         <button onclick="openCropEditor('${p.id}')">✂️ Kırp</button>
         <button onclick="moveUp('${p.id}')">↑ Yukarı</button>
         <button onclick="moveDown('${p.id}')">↓ Aşağı</button>
@@ -219,6 +337,84 @@ function removePhoto(id){
   if(!confirm('Bu fotoğrafı silmek istediğine emin misin?')) return;
   photos = photos.filter(x => x.id !== id);
   save(); render();
+}
+
+// ---- Ayarlar (arka plan rengi, konum, sıralama) ----
+function renderSwatches(){
+  const row = document.getElementById('swatchRow');
+  row.innerHTML = PASTELS.map(c => `
+    <div class="swatch ${settings.bgColor === c.hex ? 'active' : ''}"
+         style="background:${c.hex};" title="${c.label}" onclick="setBgColor('${c.hex}')"></div>
+  `).join('');
+}
+function setBgColor(hex){
+  settings.bgColor = hex;
+  saveSettings();
+  applyBgColor();
+  renderSwatches();
+  render();
+}
+function toggleAddLocation(checked){
+  settings.addLocation = checked;
+  saveSettings();
+}
+function openSettingsModal(){
+  renderSwatches();
+  document.getElementById('addLocationCheck').checked = !!settings.addLocation;
+  document.getElementById('settingsModal').style.display = 'flex';
+}
+function closeSettingsModal(){
+  document.getElementById('settingsModal').style.display = 'none';
+}
+
+function sortByDate(){
+  if(photos.length === 0) return;
+  photos.sort((a, b) => (a.addedAt||0) - (b.addedAt||0));
+  save(); render();
+  closeSettingsModal();
+  showToast('Tarihe göre sıralandı ✓');
+}
+function photoOrientationOf(p){
+  return p.orientation === 'portrait' ? 'portrait' : 'landscape';
+}
+function sortByOrientation(mode){
+  if(photos.length === 0) return;
+  const firstGroup = mode === 'landscapeFirst' ? 'landscape' : 'portrait';
+  photos.sort((a, b) => {
+    const oa = photoOrientationOf(a), ob = photoOrientationOf(b);
+    if(oa === ob) return 0;
+    return oa === firstGroup ? -1 : 1;
+  });
+  save(); render();
+  closeSettingsModal();
+  showToast('Yöne göre sıralandı ✓');
+}
+
+// ---- Çerçeve & süsleme seçici ----
+let frameEditPhotoId = null;
+function openFrameEditor(id){
+  frameEditPhotoId = id;
+  renderFrameGrid();
+  document.getElementById('frameModal').style.display = 'flex';
+}
+function closeFrameModal(){
+  document.getElementById('frameModal').style.display = 'none';
+  frameEditPhotoId = null;
+}
+function renderFrameGrid(){
+  const p = photos.find(x => x.id === frameEditPhotoId);
+  const current = (p && p.frame) || 'none';
+  const grid = document.getElementById('frameGrid');
+  grid.innerHTML = Object.keys(FRAME_DEFS).map(key => `
+    <button class="${current === key ? 'active' : ''}" onclick="setFrame('${key}')">${FRAME_DEFS[key].label}</button>
+  `).join('');
+}
+function setFrame(frameId){
+  const p = photos.find(x => x.id === frameEditPhotoId);
+  if(!p) return;
+  p.frame = frameId;
+  save(); render();
+  renderFrameGrid();
 }
 
 function showToast(msg){
@@ -286,35 +482,133 @@ document.getElementById('jsonInput').addEventListener('change', function(e){
   reader.readAsText(file);
 });
 
-document.getElementById('fileInput').addEventListener('change', function(e){
-  const files = Array.from(e.target.files || []);
-  let pending = files.length;
-  if(pending === 0) return;
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = function(ev){
-      // downscale large images to keep storage/PDF manageable
-      const img = new Image();
-      img.onload = function(){
-        const maxDim = 1600;
-        let {width, height} = img;
-        if(width > maxDim || height > maxDim){
-          const scale = maxDim / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
+// ---- EXIF GPS konum okuyucu (yalnızca cihazda çalışır, internet gerekmez) ----
+function readIFD(view, tiffStart, ifdOffset, little){
+  const count = view.getUint16(ifdOffset, little);
+  const entries = [];
+  for(let i = 0; i < count; i++){
+    const e = ifdOffset + 2 + i * 12;
+    const tag = view.getUint16(e, little);
+    const type = view.getUint16(e + 2, little);
+    const numValues = view.getUint32(e + 4, little);
+    const valField = e + 8;
+    let asciiValue = null, valueOffset = null;
+    if(type === 2){ // ASCII
+      if(numValues <= 4){
+        let s = '';
+        for(let k = 0; k < numValues - 1; k++) s += String.fromCharCode(view.getUint8(valField + k));
+        asciiValue = s;
+      } else {
+        const off = view.getUint32(valField, little);
+        let s = '';
+        for(let k = 0; k < numValues - 1; k++) s += String.fromCharCode(view.getUint8(tiffStart + off + k));
+        asciiValue = s;
+      }
+    } else if(type === 4){ // LONG
+      valueOffset = view.getUint32(valField, little);
+    } else if(type === 5){ // RATIONAL
+      valueOffset = view.getUint32(valField, little);
+    }
+    entries.push({ tag, type, count: numValues, valueOffset, asciiValue });
+  }
+  return entries;
+}
+function rationalToDeg(view, tiffStart, entry, little){
+  if(entry.type !== 5) return null;
+  const base = tiffStart + entry.valueOffset;
+  const rat = (idx) => {
+    const n = view.getUint32(base + idx * 8, little);
+    const d = view.getUint32(base + idx * 8 + 4, little);
+    return d === 0 ? 0 : n / d;
+  };
+  return rat(0) + rat(1) / 60 + rat(2) / 3600;
+}
+function readExifGPS(buffer){
+  try{
+    const view = new DataView(buffer);
+    if(view.getUint16(0, false) !== 0xFFD8) return null;
+    let offset = 2;
+    while(offset + 4 <= view.byteLength){
+      const marker = view.getUint16(offset, false);
+      if(marker >= 0xFFD0 && marker <= 0xFFD9){ offset += 2; continue; }
+      if(marker === 0xFFDA) break;
+      const segLen = view.getUint16(offset + 2, false);
+      if(marker === 0xFFE1){
+        const tag = String.fromCharCode(
+          view.getUint8(offset + 4), view.getUint8(offset + 5),
+          view.getUint8(offset + 6), view.getUint8(offset + 7)
+        );
+        if(tag === 'Exif'){
+          const tiffStart = offset + 10;
+          const little = view.getUint16(tiffStart, false) === 0x4949;
+          const firstIFD = view.getUint32(tiffStart + 4, little);
+          const ifd0 = readIFD(view, tiffStart, tiffStart + firstIFD, little);
+          const gpsTag = ifd0.find(x => x.tag === 0x8825);
+          if(!gpsTag) return null;
+          const gpsEntries = readIFD(view, tiffStart, tiffStart + gpsTag.valueOffset, little);
+          const get = (t) => gpsEntries.find(x => x.tag === t);
+          const latRef = get(1), lat = get(2), lonRef = get(3), lon = get(4);
+          if(!lat || !lon) return null;
+          const latVal = rationalToDeg(view, tiffStart, lat, little);
+          const lonVal = rationalToDeg(view, tiffStart, lon, little);
+          if(latVal == null || lonVal == null) return null;
+          const latSign = (latRef && latRef.asciiValue === 'S') ? -1 : 1;
+          const lonSign = (lonRef && lonRef.asciiValue === 'W') ? -1 : 1;
+          return { lat: latVal * latSign, lon: lonVal * lonSign };
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        photos.push({ id: uid(), dataUrl: canvas.toDataURL('image/jpeg', 0.85), note: '' });
-        pending--;
-        if(pending === 0){ save(); render(); }
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
+      }
+      offset += 2 + segLen;
+    }
+  }catch(e){ /* konum bilgisi okunamadı, sessizce atla */ }
+  return null;
+}
+
+document.getElementById('fileInput').addEventListener('change', async function(e){
+  const files = Array.from(e.target.files || []);
   e.target.value = '';
+  if(files.length === 0) return;
+
+  for(const file of files){
+    let locationNote = '';
+    if(settings.addLocation){
+      try{
+        const buf = await file.arrayBuffer();
+        const gps = readExifGPS(buf);
+        if(gps) locationNote = `📍 ${gps.lat.toFixed(5)}, ${gps.lon.toFixed(5)}`;
+      }catch(err){ /* konum okunamadı, notsuz devam */ }
+    }
+
+    await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = function(ev){
+        const img = new Image();
+        img.onload = function(){
+          const maxDim = 1600;
+          let {width, height} = img;
+          if(width > maxDim || height > maxDim){
+            const scale = maxDim / Math.max(width, height);
+            width = Math.round(width * scale);
+            height = Math.round(height * scale);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width; canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          photos.push({
+            id: uid(),
+            dataUrl: canvas.toDataURL('image/jpeg', 0.85),
+            note: locationNote,
+            orientation: img.naturalWidth >= img.naturalHeight ? 'landscape' : 'portrait',
+            frame: 'none',
+            addedAt: file.lastModified || Date.now()
+          });
+          resolve();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  save(); render();
 });
 
 // ---- Fotoğraf kırpma editörü ----
@@ -505,7 +799,7 @@ async function exportPdf(){
     async function renderPageToPdf(innerHtml, isFirst){
       stage.innerHTML = innerHtml;
       await new Promise(r => setTimeout(r, 30));
-      const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: '#fffdf9' });
+      const canvas = await html2canvas(stage, { scale: 2, useCORS: true, backgroundColor: settings.bgColor });
       const imgData = canvas.toDataURL('image/jpeg', 0.92);
       if(!isFirst) pdf.addPage();
       pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
@@ -514,7 +808,7 @@ async function exportPdf(){
     // Cover page
     const coverHtml = `
       <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
-        justify-content:center;font-family:Georgia,serif;background:#fffdf9;padding:60px;">
+        justify-content:center;font-family:Georgia,serif;background:${settings.bgColor};padding:60px;">
         <div style="font-size:14px;letter-spacing:3px;color:#a8562e;text-transform:uppercase;margin-bottom:18px;">Foto Albüm</div>
         <div style="font-size:40px;font-weight:700;color:#2b2420;text-align:center;line-height:1.3;">${escapeHtml(title)}</div>
         <div style="margin-top:24px;font-size:14px;color:#7a6f60;">${photos.length} fotoğraf</div>
@@ -531,6 +825,8 @@ async function exportPdf(){
       const hasNote = !!p.note;
       const noteH = hasNote ? Math.min(Math.round(h * 0.28), noteFontSize * 7) : 0;
       const imgAreaH = h - noteH;
+      const frameCss = frameStyleCss(p.frame);
+      const imgRadiusCss = frameImgStyle(p.frame) || 'border-radius:6px;';
       const noteHtml = hasNote
         ? `<div style="position:absolute;left:0;top:${imgAreaH}px;width:100%;height:${noteH}px;
              font-size:${noteFontSize}px;line-height:1.4;color:#2b2420;white-space:pre-wrap;
@@ -539,9 +835,9 @@ async function exportPdf(){
       return `
         <div style="position:absolute;left:${left}px;top:${top}px;width:${w}px;height:${h}px;">
           <div style="position:absolute;left:0;top:0;width:100%;height:${imgAreaH}px;
-            display:flex;align-items:center;justify-content:center;overflow:hidden;">
+            display:flex;align-items:center;justify-content:center;overflow:hidden;box-sizing:border-box;${frameCss}">
             <img src="${photoSrc}" style="max-width:100%;max-height:100%;object-fit:contain;
-              border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.12);">
+              ${imgRadiusCss}box-shadow:0 2px 8px rgba(0,0,0,.12);">
           </div>
           ${noteHtml}
         </div>`;
@@ -572,7 +868,7 @@ async function exportPdf(){
       }
 
       const pageHtml = `
-        <div style="position:relative;width:${PAGE_W}px;height:${PAGE_H}px;background:#fffdf9;">
+        <div style="position:relative;width:${PAGE_W}px;height:${PAGE_H}px;background:${settings.bgColor};">
           ${cellsHtml}
           <div style="position:absolute;left:0;bottom:10px;width:100%;text-align:center;
             font-size:11px;color:#b0a48f;">${pg+1} / ${pageCount}</div>
@@ -600,6 +896,7 @@ async function exportPdf(){
 }
 
 load();
+loadSettings();
 render();
 </script>
 </body>
