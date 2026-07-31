@@ -11,6 +11,8 @@
     <application
         android:allowBackup="true"
         android:label="Foto Albümüm"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 
