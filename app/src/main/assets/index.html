@@ -20,9 +20,12 @@
     font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
   body{padding-bottom:90px;}
   header{position:sticky;top:0;z-index:10;background:var(--paper);
-    border-bottom:1px solid var(--line);padding:16px 16px 12px;}
-  header h1{margin:0;font-size:21px;letter-spacing:.3px;font-weight:700;}
-  header p{margin:4px 0 0;font-size:13px;color:#7a6f60;}
+    border-bottom:1px solid var(--line);padding:16px 16px 12px;position:relative;overflow:hidden;}
+  header h1{margin:0;font-size:21px;letter-spacing:.3px;font-weight:700;position:relative;z-index:1;}
+  header p{margin:4px 0 0;font-size:13px;color:#7a6f60;position:relative;z-index:1;}
+  header .ornCorner{position:absolute;width:60px;height:60px;opacity:.35;pointer-events:none;z-index:0;}
+  header .ornCorner.tl{top:-4px;left:-4px;}
+  header .ornCorner.br{bottom:-4px;right:-4px;transform:rotate(180deg);}
   .toolbar{display:flex;gap:8px;padding:12px 16px 0;flex-wrap:wrap;}
   .btn{border:none;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:600;
     display:inline-flex;align-items:center;gap:6px;cursor:pointer;}
@@ -38,7 +41,8 @@
     box-shadow:0 1px 3px rgba(43,36,32,.06);}
   .card .num{font-size:11px;color:#a8562e;font-weight:700;letter-spacing:.5px;
     padding:10px 14px 0;text-transform:uppercase;}
-  .card .imgFrame{width:100%;overflow:hidden;background:#eee3cf;}
+  .card .imgFrame{width:100%;overflow:hidden;background:#eee3cf;position:relative;}
+  .card .imgFrame .frameOverlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;object-fit:fill;}
   .card .imgFrame img{width:100%;height:100%;display:block;object-fit:cover;}
   .card textarea{width:100%;border:none;resize:vertical;min-height:56px;padding:12px 14px;
     font-size:14px;font-family:inherit;color:var(--ink);background:transparent;outline:none;}
@@ -121,6 +125,8 @@
 <body>
 
 <header>
+  <img class="ornCorner tl" src="frames/corner-ornament.png" alt="">
+  <img class="ornCorner br" src="frames/corner-ornament.png" alt="">
   <h1>📔 Foto Albümüm</h1>
   <p>Fotoğraf ekle, altına not yaz, PDF fotokitap olarak dışa aktar.</p>
 </header>
@@ -252,7 +258,12 @@ const FRAME_DEFS = {
   rounded:  { label:'Yuvarlak Köşeli',  css: ()=> 'padding:3%;border-radius:22px;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.15);', imgRadius:16 },
   thick:    { label:'Kalın Renkli',     css: ()=> 'padding:4%;border:8px solid #a8562e;background:#fff;' },
   shadow:   { label:'Yumuşak Gölge',    css: ()=> 'box-shadow:0 8px 22px rgba(0,0,0,.22);' },
-  sticker:  { label:'Sticker',          css: ()=> 'padding:4%;border-radius:26px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.22);', imgRadius:20 }
+  sticker:  { label:'Sticker',          css: ()=> 'padding:4%;border-radius:26px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,.22);', imgRadius:20 },
+  vintage1: { label:'Zarif Altın',      css: ()=> 'padding:6%;background:#fffdf9;', overlay:'frames/frame-1.png' },
+  vintage2: { label:'Barok Yaprak',     css: ()=> 'padding:6%;background:#fffdf9;', overlay:'frames/frame-2.png' },
+  vintage3: { label:'Klasik Ayraç',     css: ()=> 'padding:5%;background:#fffdf9;', overlay:'frames/frame-3.png' },
+  vintage4: { label:'Kraliyet',         css: ()=> 'padding:7%;background:#fffdf9;', overlay:'frames/frame-4.png' },
+  vintage5: { label:'Dantel Kenar',     css: ()=> 'padding:6%;background:#fffdf9;', overlay:'frames/frame-5.png' }
 };
 
 function frameStyleCss(frameId){
@@ -262,6 +273,10 @@ function frameStyleCss(frameId){
 function frameImgStyle(frameId){
   const f = FRAME_DEFS[frameId] || FRAME_DEFS.none;
   return f.imgRadius ? `border-radius:${f.imgRadius}px;` : '';
+}
+function frameOverlayHtml(frameId){
+  const f = FRAME_DEFS[frameId] || FRAME_DEFS.none;
+  return f.overlay ? `<img class="frameOverlay" src="${f.overlay}" alt="">` : '';
 }
 
 function loadSettings(){
@@ -301,7 +316,7 @@ function render(){
   grid.innerHTML = photos.map((p, i) => `
     <div class="card" data-id="${p.id}">
       <div class="num">Sayfa ${i+1} / ${photos.length}</div>
-      <div class="imgFrame" style="aspect-ratio:${p.orientation === 'portrait' ? '3/4' : '4/3'};box-sizing:border-box;${frameStyleCss(p.frame)}"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}" style="${frameImgStyle(p.frame)}"></div>
+      <div class="imgFrame" style="aspect-ratio:${p.orientation === 'portrait' ? '3/4' : '4/3'};box-sizing:border-box;${frameStyleCss(p.frame)}"><img src="${p.cropDataUrl || p.dataUrl}" alt="fotoğraf ${i+1}" style="${frameImgStyle(p.frame)}">${frameOverlayHtml(p.frame)}</div>
       <textarea placeholder="Bu fotoğraf için not yaz…" oninput="updateNote('${p.id}', this.value)">${escapeHtml(p.note||'')}</textarea>
       <div class="card-actions">
         <button onclick="openFrameEditor('${p.id}')">🎀 Çerçeve</button>
@@ -807,12 +822,16 @@ async function exportPdf(){
 
     // Cover page
     const coverHtml = `
-      <div style="width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
-        justify-content:center;font-family:Georgia,serif;background:${settings.bgColor};padding:60px;">
-        <div style="font-size:14px;letter-spacing:3px;color:#a8562e;text-transform:uppercase;margin-bottom:18px;">Foto Albüm</div>
-        <div style="font-size:40px;font-weight:700;color:#2b2420;text-align:center;line-height:1.3;">${escapeHtml(title)}</div>
-        <div style="margin-top:24px;font-size:14px;color:#7a6f60;">${photos.length} fotoğraf</div>
-        <div style="margin-top:60px;font-size:12px;color:#b0a48f;">${new Date().toLocaleDateString('tr-TR')}</div>
+      <div style="position:relative;width:794px;height:1123px;display:flex;flex-direction:column;align-items:center;
+        justify-content:center;font-family:Georgia,serif;background:${settings.bgColor};padding:60px;overflow:hidden;box-sizing:border-box;">
+        <img src="frames/corner-ornament.png" style="position:absolute;top:20px;left:20px;width:150px;height:150px;opacity:.55;">
+        <img src="frames/corner-ornament.png" style="position:absolute;bottom:20px;right:20px;width:150px;height:150px;opacity:.55;transform:rotate(180deg);">
+        <img src="frames/corner-ornament.png" style="position:absolute;top:20px;right:20px;width:150px;height:150px;opacity:.55;transform:scaleX(-1);">
+        <img src="frames/corner-ornament.png" style="position:absolute;bottom:20px;left:20px;width:150px;height:150px;opacity:.55;transform:scaleY(-1);">
+        <div style="font-size:14px;letter-spacing:3px;color:#a8562e;text-transform:uppercase;margin-bottom:18px;position:relative;">Foto Albüm</div>
+        <div style="font-size:40px;font-weight:700;color:#2b2420;text-align:center;line-height:1.3;position:relative;">${escapeHtml(title)}</div>
+        <div style="margin-top:24px;font-size:14px;color:#7a6f60;position:relative;">${photos.length} fotoğraf</div>
+        <div style="margin-top:60px;font-size:12px;color:#b0a48f;position:relative;">${new Date().toLocaleDateString('tr-TR')}</div>
       </div>`;
     await renderPageToPdf(coverHtml, true);
 
@@ -827,6 +846,7 @@ async function exportPdf(){
       const imgAreaH = h - noteH;
       const frameCss = frameStyleCss(p.frame);
       const imgRadiusCss = frameImgStyle(p.frame) || 'border-radius:6px;';
+      const overlayHtml = frameOverlayHtml(p.frame);
       const noteHtml = hasNote
         ? `<div style="position:absolute;left:0;top:${imgAreaH}px;width:100%;height:${noteH}px;
              font-size:${noteFontSize}px;line-height:1.4;color:#2b2420;white-space:pre-wrap;
@@ -838,6 +858,7 @@ async function exportPdf(){
             display:flex;align-items:center;justify-content:center;overflow:hidden;box-sizing:border-box;${frameCss}">
             <img src="${photoSrc}" style="max-width:100%;max-height:100%;object-fit:contain;
               ${imgRadiusCss}box-shadow:0 2px 8px rgba(0,0,0,.12);">
+            ${overlayHtml}
           </div>
           ${noteHtml}
         </div>`;
